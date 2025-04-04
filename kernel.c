@@ -44,15 +44,6 @@ void kernel_main(void) {
     }
 }
 
-// bufの先頭からnバイト分をcで埋める
-void *memset(void *buf, char c, size_t n) {
-  // 汎用ポインタを符号なし整数型ポインタにキャスト(1byteずつ処理するため)
-  uint8_t *p = (uint8_t *)buf;
-  while(n--)
-    *p++ = c;
-  return buf;
-}
-
 // boot関数をtext.bootセクションに配置する
 // リンカスクリプトで、text.bootセクションはROMの先頭に配置される
 __attribute__((section(".text.boot")))
