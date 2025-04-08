@@ -5,6 +5,22 @@ typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
 typedef uint32_t size_t;
 
+extern char __free_ram[], __free_ram_end[];
+
+//フリーRAM領域からページ単位で動的にメモリを割り当てる簡易的なアルゴリズム(Bumpアロケータ)
+paddr_t alloc_pages(uint32_t n) {
+  // staticとして宣言すると、関数が終了してもメモリから消えない上(localとの違い)、この関数からしかアクセスできない(globalとの違い)。
+  static paddr_t next_paddr = (paddr_t) __free_ram;
+  paddr_t paddr = next_paddr;
+  next_paddr += n * PAGE_SIZE;
+
+  if (next_paddr > (paddr_t) __free_ram_end)
+    PANIC("out of memory");
+
+  memset((void *) paddr, 0, n * PAGE_SIZE);
+  return paddr;
+}
+
 // シンボル リンカによって作成されたラベルをアドレスとして参照するための宣言
 // リンカスクリプトで、__bss：Block Started by Symbol（初期値を持たない変数やstatic変数が格納される領域）の先頭アドレス, __bss_endは未初期化データ領域の末尾アドレス
 // __stack_top：スタックの末尾アドレス
@@ -127,13 +143,18 @@ void kernel_entry(void) {
 void kernel_main(void) {
     memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
 
-    // CSR の stvec に kernel_entry のアドレスを書き込む→トラップ（例外や割り込み）が起こったとき、CPUは自動的に kernel_entry をエントリーポイントとしてトラップハンドラを開始
-    WRITE_CSR(stvec, (uint32_t) kernel_entry);
-    __asm__ __volatile__("unimp"); // 無効な命令
+    paddr_t paddr0 = alloc_pages(2);
+    paddr_t paddr1 = alloc_pages(1);
+    printf("alloc_pages test: paddr0=%x\n", paddr0);
+    printf("alloc_pages test: paddr1=%x\n", paddr1);
+
+    PANIC("booted!");
+
 }
 
 // boot関数をtext.bootセクションに配置する
 // リンカスクリプトで、text.bootセクションはROMの先頭に配置される
+// ブートコードがROMで実行された後、RAMに配置されたkernel_mainへ制御が移る
 __attribute__((section(".text.boot")))
 // コンパイラによる関数エピローグ/プロローグの生成を抑制する
 __attribute__((naked))
