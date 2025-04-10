@@ -5,6 +5,93 @@ typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
 typedef uint32_t size_t;
 
+strcut process procs[PROCS_MAX];
+
+__attribute__((naked)) void switch_context(
+  uint32_t *prev_sp,
+  uint32_t *next_sp
+) {
+  __asm__ __volatile__(
+        // 実行中プロセスのスタックへレジスタを保存
+        // spは高位のアドレスから末尾に向かって伸びるため、一時保存のために53バイト確保している
+        "addi sp, sp, -13 * 4\n"
+        // レジスタの値をスタックポインタに書き込んでいる(4バイトずつずらしながら)
+        "sw ra,  0  * 4(sp)\n"
+        "sw s0,  1  * 4(sp)\n"
+        "sw s1,  2  * 4(sp)\n"
+        "sw s2,  3  * 4(sp)\n"
+        "sw s3,  4  * 4(sp)\n"
+        "sw s4,  5  * 4(sp)\n"
+        "sw s5,  6  * 4(sp)\n"
+        "sw s6,  7  * 4(sp)\n"
+        "sw s7,  8  * 4(sp)\n"
+        "sw s8,  9  * 4(sp)\n"
+        "sw s9,  10 * 4(sp)\n"
+        "sw s10, 11 * 4(sp)\n"
+        "sw s11, 12 * 4(sp)\n"
+
+        // a0: 第一引数 現在のスタックポインタが指す値をprev_spに保存
+        "sw sp, (a0)\n"
+        // next_spを現在のスタックポインタに格納
+        "lw sp, (a1)\n"
+
+        // 次のプロセスのスタックからレジスタを復元
+        "lw ra,  0  * 4(sp)\n"
+        "lw s0,  1  * 4(sp)\n"
+        "lw s1,  2  * 4(sp)\n"
+        "lw s2,  3  * 4(sp)\n"
+        "lw s3,  4  * 4(sp)\n"
+        "lw s4,  5  * 4(sp)\n"
+        "lw s5,  6  * 4(sp)\n"
+        "lw s6,  7  * 4(sp)\n"
+        "lw s7,  8  * 4(sp)\n"
+        "lw s8,  9  * 4(sp)\n"
+        "lw s9,  10 * 4(sp)\n"
+        "lw s10, 11 * 4(sp)\n"
+        "lw s11, 12 * 4(sp)\n"
+        // 確保領域を元に戻す
+        "addi sp, sp, 13 * 4\n"
+        "ret\n"
+    );
+}
+
+struct process *create_process(uint32_t pc) {
+    // 空いているプロセス管理構造体を探す
+    struct process *proc = NULL;
+    int i;
+    for (i = 0; i < PROCS_MAX; i++) {
+        if (procs[i].state == PROC_UNUSED) {
+            proc = &procs[i];
+            break;
+        }
+    }
+
+    if (!proc)
+        PANIC("no free process slots");
+
+    // switch_context() で復帰できるように、スタックに呼び出し先保存レジスタを積む
+    uint32_t *sp = (uint32_t *) &proc->stack[sizeof(proc->stack)];
+    *--sp = 0;                      // s11
+    *--sp = 0;                      // s10
+    *--sp = 0;                      // s9
+    *--sp = 0;                      // s8
+    *--sp = 0;                      // s7
+    *--sp = 0;                      // s6
+    *--sp = 0;                      // s5
+    *--sp = 0;                      // s4
+    *--sp = 0;                      // s3
+    *--sp = 0;                      // s2
+    *--sp = 0;                      // s1
+    *--sp = 0;                      // s0
+    *--sp = (uint32_t) pc;          // ra
+
+    // 各フィールドを初期化
+    proc->pid = i + 1;
+    proc->state = PROC_RUNNABLE;
+    proc->sp = (uint32_t) sp;
+    return proc;
+}
+
 extern char __free_ram[], __free_ram_end[];
 
 //フリーRAM領域からページ単位で動的にメモリを割り当てる簡易的なアルゴリズム(Bumpアロケータ)
