@@ -5,7 +5,7 @@ typedef unsigned char uint8_t;
 typedef unsigned int uint32_t;
 typedef uint32_t size_t;
 
-strcut process procs[PROCS_MAX];
+struct process procs[PROCS_MAX];
 
 __attribute__((naked)) void switch_context(
   uint32_t *prev_sp,
