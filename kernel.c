@@ -227,13 +227,41 @@ void kernel_entry(void) {
     );
 }
 
+void delay(void) {
+  for (int i = 0; i < 30000000; i++) {
+    __asm__ __volatile__("nop"); // 何もしない
+  }
+}
+
+struct process *proc_a;
+struct process *proc_b;
+
+void proc_a_entry(void) {
+  printf("starting process A \n");
+  while(1) {
+    putchar('A');
+    switch_context(&proc_a->sp, &proc_b->sp);
+    delay();
+  }
+}
+
+void proc_b_entry(void) {
+  printf("starting process B \n");
+  while(1) {
+    putchar('B');
+    switch_context(&proc_b->sp, &proc_a->sp);
+    delay();
+  }
+}
+
 void kernel_main(void) {
     memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
 
-    paddr_t paddr0 = alloc_pages(2);
-    paddr_t paddr1 = alloc_pages(1);
-    printf("alloc_pages test: paddr0=%x\n", paddr0);
-    printf("alloc_pages test: paddr1=%x\n", paddr1);
+    WRITE_CSR(stvec, (uint32_t) kernel_entry);
+
+    proc_a = create_process((uint32_t) proc_a_entry);
+    proc_b = create_process((uint32_t) proc_b_entry);
+    proc_a_entry();
 
     PANIC("booted!");
 
