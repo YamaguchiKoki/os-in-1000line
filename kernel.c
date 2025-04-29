@@ -51,7 +51,7 @@ __attribute__((naked)) void switch_context(
         "lw s11, 12 * 4(sp)\n"
         // 確保領域を元に戻す
         "addi sp, sp, 13 * 4\n"
-        "ret\n"
+        "ret\n" // raから実行
     );
 }
 
@@ -227,6 +227,28 @@ void kernel_entry(void) {
     );
 }
 
+struct process *current_proc; // 実行中プロセス
+struct process *idle_proc; // アイドルプロセス
+
+void yield(void) {
+  struct process *next = idle_proc;
+  for (int i = 0; i < PROCS_MAX; i++) {
+    struct process *proc = &procs[(current_proc->pid + i) % PROCS_MAX];
+    if (proc->state == PROC_RUNNABLE && proc->pid > 0) {
+      next = proc;
+      break;
+    }
+  }
+
+   // 現在実行中のプロセス以外に、実行可能なプロセスがない。戻って処理を続行する
+  if (next == current_proc)
+    return;
+
+  struct process *prev = current_proc;
+  current_proc = next;
+  switch_context(&prev->sp, &next->sp);
+}
+
 void delay(void) {
   for (int i = 0; i < 30000000; i++) {
     __asm__ __volatile__("nop"); // 何もしない
@@ -240,7 +262,7 @@ void proc_a_entry(void) {
   printf("starting process A \n");
   while(1) {
     putchar('A');
-    switch_context(&proc_a->sp, &proc_b->sp);
+    yield();
     delay();
   }
 }
@@ -249,7 +271,7 @@ void proc_b_entry(void) {
   printf("starting process B \n");
   while(1) {
     putchar('B');
-    switch_context(&proc_b->sp, &proc_a->sp);
+    yield();
     delay();
   }
 }
@@ -259,12 +281,16 @@ void kernel_main(void) {
 
     WRITE_CSR(stvec, (uint32_t) kernel_entry);
 
-    proc_a = create_process((uint32_t) proc_a_entry);
+    idle_proc = create_process((uint32_t) NULL);
+    idle_proc->pid = 0;
+    current_proc = idle_proc;
+
+    proc_a = create_process((uint32_t) proc_a_entry); // 関数が配置されているアドレスとして渡す
     proc_b = create_process((uint32_t) proc_b_entry);
-    proc_a_entry();
 
-    PANIC("booted!");
+    yield();
 
+    PANIC("switched to idle process");
 }
 
 // boot関数をtext.bootセクションに配置する
