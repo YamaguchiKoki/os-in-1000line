@@ -153,6 +153,8 @@ __attribute__((naked))
 __attribute__((aligned(4))) // 関数のアラインメント（配置）を4バイト境界に揃えることで、RISC-Vの命令フェッチやデータアクセスの効率を向上させる
 void kernel_entry(void) {
     __asm__ __volatile__(
+        // 実行中プロセスのカーネルスタックをsscratchから取り出す
+        // tmp = sp; sp = sscratch; sscratch = tmp;
         "csrw sscratch, sp\n"
         "addi sp, sp, -4 * 31\n"
         "sw ra,  4 * 0(sp)\n"
@@ -186,8 +188,13 @@ void kernel_entry(void) {
         "sw s10, 4 * 28(sp)\n"
         "sw s11, 4 * 29(sp)\n"
 
+        // 例外発生時のspを取り出して保存
         "csrr a0, sscratch\n"
         "sw a0, 4 * 30(sp)\n"
+
+        // カーネルスタックを設定し直す
+        "addi a0, sp, 4 * 31\n"
+        "csrw sscratch, a0\n"
 
         "mv a0, sp\n"
         "call handle_trap\n"
@@ -243,6 +250,12 @@ void yield(void) {
    // 現在実行中のプロセス以外に、実行可能なプロセスがない。戻って処理を続行する
   if (next == current_proc)
     return;
+
+  __asm__ __volatile__(
+      "csrw sscratch, %[sscratch]\n"
+      :
+      : [sscratch] "r" ((uint32_t) &next->stack[sizeof(next->stack)])
+  );
 
   struct process *prev = current_proc;
   current_proc = next;
