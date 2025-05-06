@@ -7,6 +7,35 @@ typedef uint32_t size_t;
 
 struct process procs[PROCS_MAX];
 
+// Sv32では32ビットの仮想アドレスをVPN[1](10bit), VPN[0](10bit), offset(12bit)で扱う
+// 仮想アドレス→物理アドレスへのマッピング処理の流れ
+// 1.satpレジスタが保持している際上位のページテーブルアドレス（物理）にアクセス
+// 2. 第一階層のページテーブルに対して、VPN[1]をインデックスとしてアクセスし、第二階層のページテーブルのアドレスを得る
+// 3. 第二階層のページテーブルに対して、VPN[0]をインデックスとしてアクセスし、offsetとたしあわせて物理アドレスを得る
+void map_page(uint32_t *table1, uint32_t vaddr, paddr_t paddr, uint32_t flags) {
+  if (!is_aligned(vaddr, PAGE_SIZE))
+    PANIC("unaligned vaddr %x", vaddr);
+
+  if (!is_aligned(paddr, PAGE_SIZE))
+    PANIC("unaligned paddr %x", paddr);
+
+  // 22bit右にシフトして、１０ビットのビットでマスクしてVPN[1]を得る
+  uint32_t vpn1 = (vaddr >> 22) & 0x3ff;
+  // *(table1 + vpn1)と同じ意味
+  if ((table1[vpn1] & PAGE_V) == 0) {
+    // 2段目のページテーブルが存在しないので作成する
+    uint32_t pt_paddr = alloc_pages(1);
+    table1[vpn1] = ((pt_paddr / PAGE_SIZE) << 10) | PAGE_V;
+  }
+
+  // 2段目のページテーブルにエントリを追加する
+  uint32_t vpn0 = (vaddr >> 12) & 0x3ff;
+  uint32_t *table0 = (uint32_t *) ((table1[vpn1] >> 10) * PAGE_SIZE);
+  table0[vpn0] = ((paddr / PAGE_SIZE) << 10) | flags | PAGE_V;
+
+
+}
+
 __attribute__((naked)) void switch_context(
   uint32_t *prev_sp,
   uint32_t *next_sp
